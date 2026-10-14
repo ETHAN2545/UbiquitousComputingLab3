@@ -36,7 +36,7 @@
         android:id="@+id/stopButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Start Monitoring"
+        android:text="Stop Monitoring"
         android:layout_marginTop="12dp" />
 
 </LinearLayout>
