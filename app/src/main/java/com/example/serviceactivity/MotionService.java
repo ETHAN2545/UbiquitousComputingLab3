@@ -1,8 +1,15 @@
 package com.example.serviceactivity;
 
 import android.app.Service;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+
 import android.content.Intent;
+import android.os.Build;
 import android.os.IBinder;
+
 import android.util.Log;
 
 import android.hardware.Sensor;
@@ -10,10 +17,16 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 
-public class MotionService extends Service
-        implements SensorEventListener {
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+public class MotionService extends Service implements SensorEventListener {
 
     private static final String TAG = "MotionService";
+
+    private static final String CHANNEL_ID = "motion_channel";
+    private static final int NOTIFICATION_ID = 1;
 
     private SensorManager sensorManager;
     private Sensor accelerometer;
@@ -25,6 +38,8 @@ public class MotionService extends Service
     private Thread motionThread;
     private volatile boolean running = false;
 
+    private NotificationManager notificationManager;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -34,7 +49,12 @@ public class MotionService extends Service
         sensorManager = (SensorManager)
                 getSystemService(SENSOR_SERVICE);
 
+        notificationManager = (NotificationManager)
+                getSystemService(NOTIFICATION_SERVICE);
+
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+
+        createNotificationChannel();
 
         if (accelerometer == null) {
             Log.d(TAG, "Accelerometer not available");
@@ -50,11 +70,7 @@ public class MotionService extends Service
 
             running = true;
 
-            sensorManager.registerListener(
-                    this,
-                    accelerometer,
-                    SensorManager.SENSOR_DELAY_NORMAL
-            );
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
 
             motionThread = new Thread(new Runnable() {
                 @Override
@@ -65,6 +81,8 @@ public class MotionService extends Service
                     float lastZ = 0;
 
                     boolean firstReading = true;
+
+                    long lastNotificationTime = 0;
 
                     Log.d(TAG, "Motion thread started");
 
@@ -82,10 +100,15 @@ public class MotionService extends Service
 
                             float differenceZ = Math.abs(z - lastZ);
 
-                            if (differenceX > 3 || differenceY > 3 || differenceZ > 3) {
+                            long currentTime = System.currentTimeMillis();
+
+                            if ((differenceX > 3 || differenceY > 3 || differenceZ > 3) && currentTime - lastNotificationTime > 3000) {
 
                                 Log.d(TAG, "Motion detected");
 
+                                showMotionNotification();
+
+                                lastNotificationTime = currentTime;
                             }
                         }
 
@@ -127,6 +150,55 @@ public class MotionService extends Service
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
 
+    }
+
+    private void createNotificationChannel() {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+            NotificationChannel channel =
+                    new NotificationChannel(CHANNEL_ID, "Motion Detection", NotificationManager.IMPORTANCE_HIGH);
+
+            channel.setDescription("Notifications when phone movement is detected");
+
+            notificationManager.createNotificationChannel(channel);
+        }
+    }
+
+    private void showMotionNotification() {
+
+        String motionTime = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
+
+        Intent intent = new Intent(MotionService.this, MotionDetailsActivity.class);
+
+        intent.putExtra("motionTime", motionTime);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(MotionService.this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        Notification.Builder builder;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+            builder = new Notification.Builder(MotionService.this, CHANNEL_ID);
+
+        } else {
+
+            builder = new Notification.Builder(MotionService.this);
+
+            builder.setPriority(Notification.PRIORITY_HIGH);
+        }
+
+        Notification notification = builder
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle("Motion Detected!")
+                .setContentText("Your phone moved at " + motionTime)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build();
+
+        notificationManager.notify(NOTIFICATION_ID, notification);
+
+        Log.d(TAG, "Notification displayed at " + motionTime);
     }
 
     @Override
